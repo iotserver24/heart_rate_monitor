@@ -80,23 +80,34 @@ The default sends `Serial` to UART0 pins and the monitor stays silent.
 
 Wiring:
 
-| Pulse sensor | ESP32-C6 |
+| Pulse sensor | ESP32-C6 header label |
 |---|---|
-| VCC (red) | 3V3 |
-| GND | GND |
-| SIGNAL | GPIO2 |
+| VCC / `+` | 3V3 |
+| GND / `-` | GND |
+| SIGNAL / `S` / `OUT` | **A3** (labelled `D3` on some boards; current firmware is built for `A3`) |
 
-Only GPIO0–GPIO6 are ADC-capable on the C6, so the signal wire must use one of
-those. Override the default with `-DPULSE_SIGNAL_PIN=<n>`:
+On C6 boards the `A0`–`A3` and `D0`–`D3` header labels are the GPIO numbers, not
+ADC channel numbers, so `A3` = `D3` = GPIO3. The ADC-capable labels are `A0`,
+`A1`, `A2`, `A3`, `D4`, `D5`, `D6`; any of them works, and the pin is a compile
+option so it can be changed without touching the sketch. Avoid `A0`, which is
+wired to battery measurement on many C6 variants.
+
+Override the default with `-DPULSE_SIGNAL_PIN=<label>`. Both `A3` and `3` are
+accepted:
 
 ```bash
 arduino-cli compile --fqbn esp32:esp32:esp32c6:CDCOnBoot=cdc \
-  --build-extra-flags "-DPULSE_SIGNAL_PIN=3" esp32_firmware/esp32_c6_heart_rate_ble
+  --build-property "compiler.cpp.extra_flags=-DPULSE_SIGNAL_PIN=A2" \
+  esp32_firmware/esp32_c6_heart_rate_ble
 ```
 
 Watch the serial log at 115200 baud to confirm the sensor is wired correctly.
 `lead_off=1` and a baseline outside roughly 900–2600 mV mean the signal wire is
-not connected.
+not connected. Expected readings:
+
+- Nothing on `A2`: ~500 mV and `NO SIGNAL`
+- Module powered, no finger: ~1500–1700 mV, small AC wiggle
+- Finger on the sensor: DC shifts, AC amplitude grows, `beats` starts counting
 
 ### BLE (MAX30102): `esp32_heart_rate_ble.ino`
 - For a classic ESP32 with a MAX30102 pulse oximeter on I2C

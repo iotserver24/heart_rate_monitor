@@ -6,7 +6,6 @@ import 'screens/stats_screen.dart';
 import 'screens/health_info_screen.dart';
 import 'screens/connect_screen.dart';
 import 'services/ble_service.dart';
-import 'services/wifi_service.dart';
 
 void main() {
   runApp(const HeartRateApp());
@@ -17,11 +16,8 @@ class HeartRateApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => BleService()),
-        ChangeNotifierProvider(create: (_) => WifiService()),
-      ],
+    return ChangeNotifierProvider(
+      create: (_) => BleService(),
       child: MaterialApp(
         title: 'Heart Rate Monitor',
         debugShowCheckedModeBanner: false,

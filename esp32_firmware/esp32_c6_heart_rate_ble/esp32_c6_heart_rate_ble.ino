@@ -23,11 +23,17 @@
   Wiring (defaults, override with -DPULSE_SIGNAL_PIN=<n>):
     Pulse sensor VCC     -> 3V3
     Pulse sensor GND     -> GND
-    Pulse sensor SIGNAL  -> GPIO2  (ADC1 channel 2)
+    Pulse sensor SIGNAL  -> header pin labelled A2 (also labelled D2 on some
+                            boards; both mean GPIO2)
 
-  Only GPIO0..GPIO6 are ADC-capable on the ESP32-C6, so the signal pin must be
-  one of those. Check the cable's wire colours before powering up; swapping VCC
-  and GND can destroy the sensor.
+  On ESP32-C6 boards the A0-A3 and D0-D3 header labels are GPIO numbers, not
+  ADC channel numbers: A2 == D2 == GPIO2. Only GPIO0..GPIO6 are ADC-capable, so
+  the aliases that work for the signal wire are A0/D0, A1/D1, A2/D2, A3/D3,
+  D4, D5 and D6 (GPIO0 is used for battery measurement and GPIO4/5 are the
+  I2C pins on some variants, so prefer A2/D2). This sketch understands both
+  the A* and D* spellings, e.g. -DPULSE_SIGNAL_PIN=A2.
+  Check the cable's wire colours before powering up; swapping VCC and GND can
+  destroy the sensor.
 
   Build - USB CDC must be enabled or Serial output goes to UART0 and is
   invisible over the USB connector:
@@ -51,22 +57,38 @@ BLECharacteristic tempChar;
 bool clientConnected = false;
 
 // --------------------------------------------------------------------- signal
+// Header labels A0-A3/D0-D3 are the GPIO numbers themselves. The indirection
+// lets -DPULSE_SIGNAL_PIN=A2 and -DPULSE_SIGNAL_PIN=2 both resolve to 2.
+#define HRM_CAT2(a, b) a##b
+#define HRM_CAT(a, b) HRM_CAT2(a, b)
+#define HRM_PIN_A0 0
+#define HRM_PIN_A1 1
+#define HRM_PIN_A2 2
+#define HRM_PIN_A3 3
+#define HRM_RESOLVE(p) HRM_CAT(HRM_PIN_, p)
+
 #ifndef PULSE_SIGNAL_PIN
-#define PULSE_SIGNAL_PIN 2
+#define HRM_SIGNAL_PIN 2
+#else
+#define HRM_SIGNAL_PIN HRM_RESOLVE(PULSE_SIGNAL_PIN)
 #endif
 
 static const uint32_t SAMPLE_INTERVAL_US   = 2000;   // 500 Hz
 static const uint32_t SEND_INTERVAL_MS     = 1000;
 static const uint32_t STATUS_INTERVAL_MS   = 5000;
-static const uint32_t BEAT_REFRACTORY_MS   = 280;    // allows up to ~214 BPM
-static const uint32_t BEAT_TIMEOUT_MS      = 3000;   // report 0 after this
-static const float    MIN_AC_AMPLITUDE_MV  = 12.0f;  // below this there is no pulse
+static const uint32_t BEAT_REFRACTORY_MS   = 280;    // hardware floor on beat spacing
+// Physiological bounds: a resting human heart runs ~40-200 BPM. Anything
+// outside 40-180 BPM is treated as noise, not a heartbeat.
+static const uint32_t MIN_BEAT_INTERVAL_MS = 333;   // 180 BPM ceiling
+static const uint32_t MAX_BEAT_INTERVAL_MS = 1500;  // 40 BPM floor
+static const uint32_t BEAT_TIMEOUT_MS      = 5000;   // report 0 after this
+static const float    MIN_AC_AMPLITUDE_MV  = 40.0f;  // ignore tiny wobbles
 // A powered pulse module idles near VCC/2. Outside this window the pin is
-// either floating or shorted, so no reading can be trusted.
-static const float    DC_VALID_MIN_MV      = 900.0f;
-static const float    DC_VALID_MAX_MV      = 2600.0f;
-static const uint32_t MIN_CONSISTENT_BEATS = 3;      // beats needed before trusting BPM
-static const float    MAX_INTERVAL_DEV     = 0.30f;  // reject intervals >30% off median
+// either floating or saturated, so no reading can be trusted.
+static const float    DC_VALID_MIN_MV      = 700.0f;
+static const float    DC_VALID_MAX_MV      = 2950.0f;
+static const uint32_t MIN_CONSISTENT_BEATS = 4;      // beats needed before trusting BPM
+static const float    MAX_INTERVAL_DEV     = 0.20f;  // reject intervals >20% off median
 
 // ------------------------------------------------------------------ BLE objects
 // Ring of accepted beat intervals, used to reject erratic (noise) detections.
@@ -130,6 +152,7 @@ uint32_t medianInterval() {
 
 // Accept an interval only if it is consistent with the recent rhythm.
 void registerInterval(uint32_t intervalMs) {
+  if (intervalMs < MIN_BEAT_INTERVAL_MS || intervalMs > MAX_BEAT_INTERVAL_MS) return;
   uint32_t median = medianInterval();
   if (median > 0 && intervalCount >= 2) {
     float dev = fabsf((float)intervalMs - (float)median) / (float)median;
@@ -147,7 +170,7 @@ void registerInterval(uint32_t intervalMs) {
 
 // One decision step per ADC sample.
 void processSample() {
-  uint32_t mv = analogReadMilliVolts(PULSE_SIGNAL_PIN);
+  uint32_t mv = analogReadMilliVolts(HRM_SIGNAL_PIN);
   uint32_t now = millis();
 
   // A disconnected input floats or sits at a rail and wanders. Reject anything
@@ -167,7 +190,7 @@ void processSample() {
     return;
   }
 
-  float threshold = fmaxf(MIN_AC_AMPLITUDE_MV, envMax * 0.45f);
+  float threshold = fmaxf(MIN_AC_AMPLITUDE_MV, envMax * 0.60f);
   bool signalOk = envMax > MIN_AC_AMPLITUDE_MV;
 
   if (signalOk && ac > threshold && !aboveThresh &&
@@ -185,6 +208,29 @@ void processSample() {
 }
 
 // --------------------------------------------------------------------- BLE glue
+void hrmPrintPinHint(float mv) {
+  static bool warned = false;
+  if (mv >= DC_VALID_MIN_MV && mv <= DC_VALID_MAX_MV) {
+    warned = false;
+    return;
+  }
+  if (warned) return;
+  warned = true;
+  Serial.printf(
+      "WARNING: GPIO%d reads %.0f mV, outside the 900-2600 mV window for a "
+      "powered pulse module (floating wire reads ~500 mV). Check that SIGNAL "
+      "goes to header pin A%d/D%d and that VCC=3V3, GND=GND.\n",
+      HRM_SIGNAL_PIN, mv, HRM_SIGNAL_PIN, HRM_SIGNAL_PIN);
+}
+
+void hrmPrintPinOk(float mv) {
+  static bool reported = false;
+  if (reported || mv < DC_VALID_MIN_MV || mv > DC_VALID_MAX_MV) return;
+  reported = true;
+  Serial.printf("OK: GPIO%d reads %.0f mV - sensor is powered and on the right pin\n",
+                HRM_SIGNAL_PIN, mv);
+}
+
 void setupBle() {
   Serial.print("BLE: init... ");
   BTStatus initStatus = BLE.begin(DEVICE_NAME);
@@ -270,24 +316,21 @@ void setup() {
   Serial.printf("chip: %s  cores: %d  reset: %s\n",
                 ESP.getChipModel(), ESP.getChipCores(), resetReasonName());
   Serial.printf("signal pin: GPIO%d  sample rate: %u Hz\n",
-                PULSE_SIGNAL_PIN, (unsigned)(1000000UL / SAMPLE_INTERVAL_US));
+                HRM_SIGNAL_PIN, (unsigned)(1000000UL / SAMPLE_INTERVAL_US));
 
   analogReadResolution(12);
-  analogSetPinAttenuation(PULSE_SIGNAL_PIN, ADC_11db);
+  analogSetPinAttenuation(HRM_SIGNAL_PIN, ADC_11db);
 
   // Seed the baseline from real samples so detection starts from the measured
   // mid-rail voltage rather than the hard-coded default.
   float sum = 0.0f;
   for (int i = 0; i < 64; i++) {
-    sum += (float)analogReadMilliVolts(PULSE_SIGNAL_PIN);
+    sum += (float)analogReadMilliVolts(HRM_SIGNAL_PIN);
     delay(3);
   }
   dcLevel = sum / 64.0f;
   Serial.printf("baseline: %.0f mV\n", dcLevel);
-
-  if (dcLevel < DC_VALID_MIN_MV || dcLevel > DC_VALID_MAX_MV) {
-    Serial.println("WARNING: signal pin is outside the mid-rail window - sensor likely not connected");
-  }
+  hrmPrintPinHint(dcLevel);
 
   setupBle();
   Serial.println("=== ready ===");
@@ -322,6 +365,10 @@ void loop() {
 
   if (now - lastDebug >= 2000) {
     lastDebug = now;
+    // The window check re-evaluates the live baseline, so a wire made after
+    // boot still shows up here even though setup() already printed once.
+    hrmPrintPinHint(lastDcMv);
+    hrmPrintPinOk(lastDcMv);
     Serial.printf("SENSOR dc=%.0fmV ac=%.1fmV env=%.1fmV lead_off=%d beats=%u bpm=%d age=%ldms\n",
                   lastDcMv, lastAcMv, lastEnvMv, leadOff ? 1 : 0, intervalCount,
                   beatBpm, lastBeatMs == 0 ? -1L : (long)(now - lastBeatMs));

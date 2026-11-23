@@ -28,40 +28,47 @@ class GaugeRing extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          CustomPaint(
-            size: Size(size, size),
-            painter: _RingPainter(
-              progress: progress,
-              color: color,
-              strokeWidth: strokeWidth,
-            ),
-          ),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: progress),
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeOutCubic,
+        builder: (context, animatedProgress, _) {
+          return Stack(
+            alignment: Alignment.center,
             children: [
-              Text(
-                '$value$unit',
-                style: TextStyle(
-                  fontSize: size * 0.24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+              CustomPaint(
+                size: Size(size, size),
+                painter: _RingPainter(
+                  progress: animatedProgress,
+                  color: color,
+                  strokeWidth: strokeWidth,
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: size * 0.1,
-                  color: Colors.white.withOpacity(0.6),
-                  fontWeight: FontWeight.w500,
-                ),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '$value$unit',
+                    style: TextStyle(
+                      fontSize: size * 0.24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: size * 0.1,
+                      color: Colors.white.withOpacity(0.6),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -90,23 +97,32 @@ class _RingPainter extends CustomPainter {
       ..strokeWidth = strokeWidth;
     canvas.drawCircle(center, radius, bgPaint);
 
-    // Progress arc
+    // Progress arc with a soft glow
+    final glowPaint = Paint()
+      ..color = color.withOpacity(0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth + 6
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+
     final progressPaint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -90 * 3.14159 / 180,
-      2 * 3.14159 * progress,
-      false,
-      progressPaint,
-    );
+    for (final paint in [glowPaint, progressPaint]) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        -90 * 3.14159 / 180,
+        2 * 3.14159 * progress,
+        false,
+        paint,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(_RingPainter oldDelegate) =>
-      oldDelegate.progress != progress;
+      oldDelegate.progress != progress || oldDelegate.color != color;
 }

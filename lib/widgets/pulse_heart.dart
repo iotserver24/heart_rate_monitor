@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Animated pulsing heart icon that beats in sync with heart rate.
+/// Animated pulsing heart icon that beats in sync with the heart rate.
 class PulseHeart extends StatefulWidget {
   final int bpm;
   final double size;
@@ -18,9 +18,8 @@ class PulseHeart extends StatefulWidget {
 }
 
 class _PulseHeartState extends State<PulseHeart>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
@@ -29,9 +28,6 @@ class _PulseHeartState extends State<PulseHeart>
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
     _startAnimation();
   }
 
@@ -39,9 +35,10 @@ class _PulseHeartState extends State<PulseHeart>
     if (widget.bpm > 0) {
       final beatDuration = (60000 / widget.bpm).round();
       _controller.duration = Duration(milliseconds: beatDuration);
-      _controller.repeat(reverse: true);
+      _controller.repeat();
     } else {
       _controller.stop();
+      _controller.value = 0;
     }
   }
 
@@ -62,18 +59,38 @@ class _PulseHeartState extends State<PulseHeart>
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _scaleAnimation,
+      animation: _controller,
       builder: (context, child) {
+        // Gentle heartbeat pulse, resting at zero when disconnected
+        final t = _controller.value;
+        final scale = widget.bpm > 0 ? 1.0 + 0.12 * _beatCurve(t) : 1.0;
         return Transform.scale(
-          scale: _scaleAnimation.value,
-          child: child,
+          scale: scale,
+          child: Icon(
+            Icons.favorite,
+            size: widget.size,
+            color: widget.bpm > 0 ? widget.color : widget.color.withOpacity(0.4),
+            shadows: widget.bpm > 0
+                ? [
+                    Shadow(
+                      color: widget.color.withOpacity(0.45),
+                      blurRadius: widget.size * 0.3,
+                    ),
+                  ]
+                : null,
+          ),
         );
       },
-      child: Icon(
-        Icons.favorite,
-        size: widget.size,
-        color: widget.color,
-      ),
     );
+  }
+
+  /// Lub-dub double-pulse curve: sharp rise, dip, second rise, rest.
+  double _beatCurve(double t) {
+    if (t < 0.15) return Curves.easeOut.transform(t / 0.15);
+    if (t < 0.3) {
+      return 1.0 - Curves.easeIn.transform((t - 0.15) / 0.15) * 0.25;
+    }
+    if (t < 0.45) return 0.75 + Curves.easeOut.transform((t - 0.3) / 0.15) * 0.25;
+    return 1.0 - Curves.easeIn.transform((t - 0.45) / 0.55);
   }
 }

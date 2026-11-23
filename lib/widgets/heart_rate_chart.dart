@@ -29,37 +29,10 @@ class HeartRateChart extends StatelessWidget {
             strokeWidth: 1,
           ),
         ),
-        titlesData: FlTitlesData(
-          show: true,
-          topTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          rightTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          bottomTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: 40,
-              reservedSize: 36,
-              getTitlesWidget: (value, meta) {
-                return Text(
-                  value.toInt().toString(),
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.4),
-                    fontSize: 10,
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
+        titlesData: const FlTitlesData(show: false),
         borderData: FlBorderData(show: false),
         minX: 0,
-        maxX: dataPoints.length > 1 ? (dataPoints.last.x) : 1,
+        maxX: dataPoints.length > 1 ? dataPoints.last.x : 1,
         minY: minY,
         maxY: maxY,
         lineBarsData: [

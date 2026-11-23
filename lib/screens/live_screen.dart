@@ -3,15 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../services/ble_service.dart';
-import '../models/session.dart';
-import '../utils/session_storage.dart';
 import '../utils/health_utils.dart';
 import '../widgets/pulse_heart.dart';
-import '../widgets/heart_rate_chart.dart';
 import '../widgets/gauge_ring.dart';
+import '../widgets/heart_rate_chart.dart';
 import '../widgets/zone_indicator.dart';
+import '../utils/session_storage.dart';
+import '../models/session.dart';
 
-/// Main live measurement screen showing real-time heart rate, SpO2, temp, and chart.
 class LiveScreen extends StatefulWidget {
   const LiveScreen({super.key});
 
@@ -23,12 +22,6 @@ class _LiveScreenState extends State<LiveScreen> {
   Session? _currentSession;
   Timer? _sessionTimer;
   bool _sessionActive = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _startListening();
-  }
 
   void _startListening() {
     final ble = context.read<BleService>();
@@ -93,15 +86,12 @@ class _LiveScreenState extends State<LiveScreen> {
           const SizedBox(width: 16),
         ],
       ),
-      body: connected
-          ? _connectedView(ble)
-          : _disconnectedView(),
+      body: connected ? _connectedView(ble) : _disconnectedView(),
       floatingActionButton: connected
           ? FloatingActionButton.extended(
               onPressed: _sessionActive ? _stopSession : _startSession,
-              backgroundColor: _sessionActive
-                  ? const Color(0xFFE53935)
-                  : const Color(0xFF4CAF50),
+              backgroundColor:
+                  _sessionActive ? const Color(0xFFE53935) : const Color(0xFF4CAF50),
               icon: Icon(_sessionActive ? Icons.stop : Icons.play_arrow),
               label: Text(_sessionActive ? 'Stop Session' : 'Start Session'),
             )
@@ -143,7 +133,7 @@ class _LiveScreenState extends State<LiveScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const PulseHeart(bpm: 0, size: 100, color: Colors.grey),
+          const PulseHeart(bpm: 0, size: 100),
           const SizedBox(height: 24),
           const Text(
             'Not Connected',
@@ -169,12 +159,17 @@ class _LiveScreenState extends State<LiveScreen> {
             label: const Text('Connect Device'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFE53935),
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),
         ],
       ),
     );
+  }
+
+  void _showConnectDialog() {
+    Navigator.pushNamed(context, '/connect');
   }
 
   Widget _connectedView(BleService ble) {
@@ -278,7 +273,6 @@ class _LiveScreenState extends State<LiveScreen> {
                         value: ble.currentSpo2,
                         maxValue: 100,
                         label: 'SpO2',
-                        unit: '%',
                         color: const Color(0xFF29B6F6),
                         size: 100,
                       ),
@@ -354,10 +348,10 @@ class _LiveScreenState extends State<LiveScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                const Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
+                    Text(
                       'Live BPM',
                       style: TextStyle(
                         color: Colors.white,
@@ -365,36 +359,12 @@ class _LiveScreenState extends State<LiveScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.red,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Text(
-                            'LIVE',
-                            style: TextStyle(
-                              color: Colors.red,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      'LIVE',
+                      style: TextStyle(
+                        color: Color(0xFFE53935),
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],
@@ -427,7 +397,10 @@ class _LiveScreenState extends State<LiveScreen> {
                   _quickStat('Avg',
                       '${(readings.map((r) => r.bpm).reduce((a, b) => a + b) ~/ readings.length)}'),
                   _quickStat(
-                      'HRV', HealthUtils.hrvValue(readings.map((r) => r.bpm).toList()).toString()),
+                      'HRV',
+                      HealthUtils.hrvValue(
+                              readings.map((r) => r.bpm).toList())
+                          .toString()),
                 ],
               ),
             ),
@@ -467,9 +440,5 @@ class _LiveScreenState extends State<LiveScreen> {
     if (bpm <= 100) return const Color(0xFF4CAF50);
     if (bpm <= 140) return const Color(0xFFFF9800);
     return const Color(0xFFE53935);
-  }
-
-  void _showConnectDialog() {
-    Navigator.pushNamed(context, '/connect');
   }
 }
